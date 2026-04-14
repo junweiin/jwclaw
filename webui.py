@@ -67,7 +67,7 @@ from flask_socketio import SocketIO, emit
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from jwclaw import (
-    load_config, load_skills, load_memories, 
+    load_config, load_skills, load_memory, 
     build_system_prompt, run as agent_run
 )
 
@@ -99,7 +99,7 @@ def initialize_system():
     print(f"✅ 已加载 {len(skills_cache)} 个Skills")
     
     # 加载记忆
-    memories_cache = load_memories()
+    memories_cache = load_memory()
     print(f"✅ 已加载 {len(memories_cache)} 条记忆")
     
     # 初始化对话历史
