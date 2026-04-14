@@ -144,3 +144,77 @@ python3 scripts/weather_advisor_tool.py alert --city Beijing --days 3
 - 建议结合人工判断使用，AI分析仅供参考
 - 首次使用请先安装依赖：`pip install requests`
 - 如遇到API限流，请适当增加请求间隔
+
+## 执行代码
+```python
+import subprocess
+import sys
+import os
+
+try:
+    # 解析参数
+    query = args[0].strip() if args and args[0].strip() else "今天天气"
+    
+    # 确定城市（默认北京）
+    city = "Beijing"
+    if len(args) > 1 and args[1].strip():
+        city = args[1].strip()
+    
+    # 确定命令类型
+    command = "now"
+    if "穿衣" in query or "outfit" in query.lower() or "穿" in query:
+        command = "outfit"
+    elif "预警" in query or "alert" in query.lower() or "警" in query:
+        command = "alert"
+    
+    # 构建脚本路径 - 直接使用绝对路径
+    script_path = r"C:\Users\jw\Desktop\agent\skills\weather-advisor\scripts\weather_advisor_tool.py"
+    
+    # 检查脚本是否存在
+    if not os.path.exists(script_path):
+        result = f"❌ 错误: 找不到脚本文件 {script_path}"
+    else:
+        # 执行Python脚本
+        cmd = [sys.executable, script_path, command, "--city", city]
+        process = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            encoding='utf-8',
+            errors='replace'
+        )
+        
+        if process.returncode == 0:
+            # 解析JSON结果并格式化输出
+            import json
+            try:
+                data = json.loads(process.stdout)
+                if data.get("status") == "success":
+                    current = data.get("current", {})
+                    city_name = data.get("city", "未知城市")
+                    timestamp = data.get("timestamp", "")
+                    
+                    result_lines = [
+                        f"🌤️  {city_name} 实时天气",
+                        f"━━━━━━━━━━━━━━━━━━━━━━",
+                        f"📅 时间: {timestamp}",
+                        f"🌡️  温度: {current.get('temperature', 'N/A')}",
+                        f"💨 体感: {current.get('feels_like', 'N/A')}",
+                        f"💧 湿度: {current.get('humidity', 'N/A')}",
+                        f"🌬️  风速: {current.get('wind_speed', 'N/A')}",
+                        f"☁️  天气: {current.get('weather', 'N/A')}",
+                        f"🌧️  降水: {current.get('precipitation', 'N/A')}",
+                    ]
+                    result = "\n".join(result_lines)
+                else:
+                    result = f"❌ 查询失败: {data.get('message', '未知错误')}"
+            except json.JSONDecodeError:
+                result = process.stdout.strip()
+        else:
+            error_msg = process.stderr.strip() if process.stderr else "未知错误"
+            result = f"❌ 执行失败: {error_msg}\n\n提示: 请确保已安装依赖 `pip install requests`"
+            
+except Exception as e:
+    result = f"❌ 执行出错: {str(e)}"
+```

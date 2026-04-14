@@ -339,13 +339,13 @@ def execute_skill(skill: dict, raw_args: list) -> str:
     result = ""
     
     try:
-        # QClaw格式：有scripts目录
-        if skill.get("has_scripts"):
-            result = _execute_qclaw_skill(skill, raw_args)
-        
-        # 旧格式：有Python代码
-        elif skill.get("code"):
+        # 优先使用执行代码（如果有）
+        if skill.get("code"):
             result = _execute_python_skill(skill, raw_args)
+        
+        # QClaw格式：有scripts目录且无执行代码
+        elif skill.get("has_scripts"):
+            result = _execute_qclaw_skill(skill, raw_args)
         
         # 无代码：使用LLM执行
         else:
