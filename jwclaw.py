@@ -1277,7 +1277,7 @@ tool: create_skill("名称", "功能描述")
 用户> 桌面上哪个文件是阅读用的
 [思考]
 用户想知道桌面上哪个文件是用来阅读的。直接用shell搜索文件名包含阅读关键词的文件。
-[回复] tool: shell("Get-ChildItem C:\\Users\\jw\\Desktop | Where-Object {$_.Name -match 'read|book|pdf|ebook|文献|图书'} | Select-Object Name")
+[回复] tool: shell("Get-ChildItem C:\\Users\\jw\\Desktop | Where-Object {{`$_.Name -match 'read|book|pdf|ebook|文献|图书'}} | Select-Object Name")
 ```
 
 **方式B：使用Python代码解决复杂问题**
