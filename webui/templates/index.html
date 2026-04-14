@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JwClaw - 智能体系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --primary-color: #4f46e5;
+            --bg-color: #f8fafc;
+            --chat-bg: #ffffff;
+        }
+        
+        body {
+            background-color: var(--bg-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        
+        .navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .chat-container {
+            max-width: 900px;
+            margin: 20px auto;
+            height: calc(100vh - 180px);
+            background: var(--chat-bg);
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        .message {
+            margin-bottom: 20px;
+            animation: fadeIn 0.3s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .user-message {
+            display: flex;
+            justify-content: flex-end;
+        }
+        
+        .user-message .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 18px;
+            border-radius: 18px 18px 4px 18px;
+            max-width: 70%;
+        }
+        
+        .assistant-message {
+            display: flex;
+            justify-content: flex-start;
+        }
+        
+        .assistant-message .message-content {
+            background: #f1f5f9;
+            color: #1e293b;
+            padding: 12px 18px;
+            border-radius: 18px 18px 18px 4px;
+            max-width: 80%;
+        }
+        
+        .thinking-content {
+            background: #fef3c7;
+            color: #92400e;
+            padding: 10px 15px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            font-size: 0.9em;
+            border-left: 3px solid #f59e0b;
+        }
+        
+        .tool-call {
+            background: #dbeafe;
+            color: #1e40af;
+            padding: 10px 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+            font-size: 0.9em;
+            border-left: 3px solid #3b82f6;
+        }
+        
+        .tool-result {
+            background: #d1fae5;
+            color: #065f46;
+            padding: 10px 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+            font-size: 0.9em;
+            border-left: 3px solid #10b981;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .chat-input-area {
+            padding: 20px;
+            border-top: 1px solid #e2e8f0;
+            background: white;
+            border-radius: 0 0 15px 15px;
+        }
+        
+        .typing-indicator {
+            display: none;
+            padding: 10px;
+            color: #64748b;
+            font-style: italic;
+        }
+        
+        .typing-indicator.active {
+            display: block;
+        }
+        
+        .status-bar {
+            background: #f8fafc;
+            padding: 8px 20px;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 0.85em;
+            color: #64748b;
+        }
+        
+        .btn-send {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            color: white;
+            padding: 10px 25px;
+            border-radius: 25px;
+            transition: all 0.3s;
+        }
+        
+        .btn-send:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-send:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .markdown-content {
+            line-height: 1.6;
+        }
+        
+        .markdown-content code {
+            background: #e2e8f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        
+        .markdown-content pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-dark">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">
+                <i class="bi bi-robot"></i> JwClaw 智能体系统
+            </span>
+            <div>
+                <button class="btn btn-outline-light btn-sm me-2" onclick="clearHistory()">
+                    <i class="bi bi-trash"></i> 清空对话
+                </button>
+                <span class="badge bg-light text-dark" id="status-badge">
+                    <i class="bi bi-circle-fill text-success"></i> 在线
+                </span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 聊天容器 -->
+    <div class="chat-container">
+        <!-- 状态栏 -->
+        <div class="status-bar">
+            <i class="bi bi-cpu"></i> 模型: <span id="model-name">加载中...</span> | 
+            <i class="bi bi-lightning-charge"></i> Skills: <span id="skills-count">0</span> |
+            <i class="bi bi-memory"></i> 记忆: <span id="memories-count">0</span>
+        </div>
+
+        <!-- 消息区域 -->
+        <div class="chat-messages" id="chat-messages">
+            <div class="text-center text-muted mt-5">
+                <i class="bi bi-chat-dots" style="font-size: 3rem;"></i>
+                <p class="mt-3">开始与JwClaw对话吧！</p>
+            </div>
+        </div>
+
+        <!-- 输入区域 -->
+        <div class="chat-input-area">
+            <div class="typing-indicator" id="typing-indicator">
+                <i class="bi bi-three-dots"></i> JwClaw正在思考...
+            </div>
+            <div class="input-group">
+                <input type="text" 
+                       class="form-control form-control-lg" 
+                       id="user-input" 
+                       placeholder="输入消息..."
+                       onkeypress="handleKeyPress(event)">
+                <button class="btn btn-send" id="send-btn" onclick="sendMessage()">
+                    <i class="bi bi-send-fill"></i> 发送
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <script>
+        // 初始化Socket.IO
+        const socket = io();
+        let currentMessageDiv = null;
+        let isThinking = false;
+
+        // 连接事件
+        socket.on('connect', () => {
+            console.log('✅ 已连接到服务器');
+            loadStatus();
+        });
+
+        socket.on('disconnect', () => {
+            console.log('❌ 与服务器断开连接');
+            document.getElementById('status-badge').innerHTML = 
+                '<i class="bi bi-circle-fill text-danger"></i> 离线';
+        });
+
+        // 加载系统状态
+        async function loadStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                document.getElementById('model-name').textContent = data.model;
+                document.getElementById('skills-count').textContent = data.skills_count;
+                document.getElementById('memories-count').textContent = data.memories_count;
+            } catch (error) {
+                console.error('加载状态失败:', error);
+            }
+        }
+
+        // 发送消息
+        function sendMessage() {
+            const input = document.getElementById('user-input');
+            const message = input.value.trim();
+            
+            if (!message || isThinking) return;
+            
+            // 添加用户消息
+            addUserMessage(message);
+            
+            // 清空输入框
+            input.value = '';
+            
+            // 显示思考指示器
+            showTypingIndicator();
+            
+            // 发送到服务器
+            socket.emit('send_message', { message: message });
+        }
+
+        // 处理回车键
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        // 添加用户消息
+        function addUserMessage(message) {
+            const messagesDiv = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message user-message';
+            messageDiv.innerHTML = `
+                <div class="message-content">
+                    ${escapeHtml(message)}
+                </div>
+            `;
+            messagesDiv.appendChild(messageDiv);
+            scrollToBottom();
+        }
+
+        // 添加助手消息
+        function addAssistantMessage(content) {
+            const messagesDiv = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message assistant-message';
+            messageDiv.innerHTML = `
+                <div class="message-content markdown-content">
+                    ${marked.parse(content)}
+                </div>
+            `;
+            messagesDiv.appendChild(messageDiv);
+            scrollToBottom();
+            return messageDiv;
+        }
+
+        // 添加工具调用
+        function addToolCall(tool, args) {
+            const messagesDiv = document.getElementById('chat-messages');
+            const toolDiv = document.createElement('div');
+            toolDiv.className = 'tool-call';
+            toolDiv.innerHTML = `
+                <i class="bi bi-wrench"></i> 
+                <strong>调用工具:</strong> ${tool}(${args.join(', ')})
+            `;
+            messagesDiv.appendChild(toolDiv);
+            scrollToBottom();
+        }
+
+        // 添加工具结果
+        function addToolResult(tool, result) {
+            const messagesDiv = document.getElementById('chat-messages');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'tool-result';
+            resultDiv.innerHTML = `
+                <i class="bi bi-check-circle"></i> 
+                <strong>${tool} 执行结果:</strong><br>
+                ${escapeHtml(result)}
+            `;
+            messagesDiv.appendChild(resultDiv);
+            scrollToBottom();
+        }
+
+        // 显示思考指示器
+        function showTypingIndicator() {
+            isThinking = true;
+            document.getElementById('typing-indicator').classList.add('active');
+            document.getElementById('send-btn').disabled = true;
+        }
+
+        // 隐藏思考指示器
+        function hideTypingIndicator() {
+            isThinking = false;
+            document.getElementById('typing-indicator').classList.remove('active');
+            document.getElementById('send-btn').disabled = false;
+        }
+
+        // 滚动到底部
+        function scrollToBottom() {
+            const messagesDiv = document.getElementById('chat-messages');
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // 转义HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 清空历史
+        function clearHistory() {
+            if (confirm('确定要清空对话历史吗？')) {
+                socket.emit('clear_history');
+                document.getElementById('chat-messages').innerHTML = `
+                    <div class="text-center text-muted mt-5">
+                        <i class="bi bi-chat-dots" style="font-size: 3rem;"></i>
+                        <p class="mt-3">对话历史已清空，开始新的对话吧！</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Socket事件监听
+        socket.on('thinking', (data) => {
+            if (data.status) {
+                showTypingIndicator();
+            } else {
+                hideTypingIndicator();
+            }
+        });
+
+        socket.on('thinking_content', (data) => {
+            // 可以在这里显示思考过程
+            console.log('思考:', data.content);
+        });
+
+        socket.on('reply_content', (data) => {
+            // 流式接收回复内容
+            if (!currentMessageDiv) {
+                currentMessageDiv = addAssistantMessage('');
+            }
+            const contentDiv = currentMessageDiv.querySelector('.markdown-content');
+            contentDiv.innerHTML += data.content;
+            scrollToBottom();
+        });
+
+        socket.on('message_complete', (data) => {
+            currentMessageDiv = null;
+            hideTypingIndicator();
+        });
+
+        socket.on('tool_call', (data) => {
+            addToolCall(data.tool, data.args);
+        });
+
+        socket.on('tool_result', (data) => {
+            addToolResult(data.tool, data.result);
+        });
+
+        socket.on('error', (data) => {
+            console.error('错误:', data.message);
+            hideTypingIndicator();
+            alert('错误: ' + data.message);
+        });
+
+        socket.on('history_cleared', (data) => {
+            console.log(data.message);
+        });
+    </script>
+</body>
+</html>
