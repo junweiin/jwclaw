@@ -21,7 +21,7 @@ try:
     else:
         # 安全检查：禁止执行危险命令
         dangerous_commands = [
-            'rm -rf /', 'del /s /q C:\\', 'format', 'mkfs',
+            'rm -rf /', 'del /s /q C:\\', 'format c:', 'format d:', 'mkfs',
             ':(){ :|:& };:', 'chmod 777 /', 'sudo rm -rf'
         ]
         
