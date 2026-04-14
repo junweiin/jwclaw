@@ -384,6 +384,229 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #ccc;
         }
+        
+        /* 模态窗样式 */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+        }
+        
+        .modal-content {
+            position: relative;
+            background: white;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            animation: modalSlideIn 0.3s ease-out;
+        }
+        
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+        
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-header h2 {
+            font-size: 18px;
+            font-weight: 600;
+            margin: 0;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 28px;
+            color: #999;
+            cursor: pointer;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+        
+        .modal-close:hover {
+            background: var(--hover-bg);
+            color: #333;
+        }
+        
+        .modal-body {
+            padding: 24px;
+            overflow-y: auto;
+            max-height: calc(80vh - 80px);
+        }
+        
+        .model-list {
+            margin-bottom: 16px;
+        }
+        
+        .model-item {
+            padding: 16px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .model-item:hover {
+            border-color: #999;
+            background: var(--hover-bg);
+        }
+        
+        .model-item.active {
+            border-color: #000;
+            background: #f8f8f8;
+        }
+        
+        .model-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .model-item-name {
+            font-weight: 600;
+            font-size: 15px;
+        }
+        
+        .model-item-badge {
+            background: #000;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        
+        .model-item-api {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+        
+        .model-item-desc {
+            font-size: 13px;
+            color: #999;
+        }
+        
+        .btn-add-model {
+            width: 100%;
+            padding: 12px;
+            border: 2px dashed var(--border-color);
+            background: transparent;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #666;
+            transition: all 0.2s;
+        }
+        
+        .btn-add-model:hover {
+            border-color: #999;
+            color: #333;
+            background: var(--hover-bg);
+        }
+        
+        .add-model-form {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+        }
+        
+        .add-model-form h3 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 14px;
+            margin-bottom: 12px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        
+        .form-input:focus {
+            border-color: #999;
+        }
+        
+        .form-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+        }
+        
+        .btn-cancel,
+        .btn-save {
+            flex: 1;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-cancel {
+            background: white;
+            border: 1px solid var(--border-color);
+            color: #666;
+        }
+        
+        .btn-cancel:hover {
+            background: var(--hover-bg);
+        }
+        
+        .btn-save {
+            background: #000;
+            border: none;
+            color: white;
+        }
+        
+        .btn-save:hover {
+            background: #333;
+        }
     </style>
 </head>
 <body>
@@ -391,13 +614,45 @@
     <div class="header">
         <h1>JwClaw</h1>
         <div class="header-actions">
-            <div class="status-indicator">
-                <div class="status-dot"></div>
+            <button class="btn-icon" onclick="showModelSelector()" id="current-model-btn">
                 <span id="model-name">加载中...</span>
-            </div>
+                <span style="margin-left: 4px;">▼</span>
+            </button>
             <button class="btn-icon" onclick="clearHistory()">
                 清空
             </button>
+        </div>
+    </div>
+
+    <!-- 模型选择模态窗 -->
+    <div id="model-modal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="closeModelSelector()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>选择模型</h2>
+                <button class="modal-close" onclick="closeModelSelector()">×</button>
+            </div>
+            <div class="modal-body">
+                <div id="model-list" class="model-list">
+                    <!-- 模型列表将动态加载 -->
+                </div>
+                <button class="btn-add-model" onclick="showAddModelForm()">
+                    + 添加新模型
+                </button>
+                
+                <!-- 添加模型表单 -->
+                <div id="add-model-form" class="add-model-form" style="display: none;">
+                    <h3>添加新模型</h3>
+                    <input type="text" id="model-name-input" placeholder="模型名称 (如: gpt-4)" class="form-input">
+                    <input type="text" id="model-api-input" placeholder="API地址 (如: https://api.openai.com/v1)" class="form-input">
+                    <input type="text" id="model-key-input" placeholder="API密钥" class="form-input">
+                    <input type="text" id="model-desc-input" placeholder="描述 (可选)" class="form-input">
+                    <div class="form-actions">
+                        <button class="btn-cancel" onclick="hideAddModelForm()">取消</button>
+                        <button class="btn-save" onclick="saveNewModel()">保存</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -664,6 +919,144 @@
                 hideTypingIndicator();
             }
         });
+
+        // 模型选择器功能
+        let modelsData = [];
+        
+        function showModelSelector() {
+            document.getElementById('model-modal').style.display = 'flex';
+            loadModels();
+        }
+        
+        function closeModelSelector() {
+            document.getElementById('model-modal').style.display = 'none';
+            hideAddModelForm();
+        }
+        
+        async function loadModels() {
+            try {
+                const response = await fetch('/api/models');
+                modelsData = await response.json();
+                renderModelList();
+            } catch (error) {
+                console.error('加载模型列表失败:', error);
+            }
+        }
+        
+        function renderModelList() {
+            const listDiv = document.getElementById('model-list');
+            const currentModel = document.getElementById('model-name').textContent;
+            
+            listDiv.innerHTML = modelsData.map(model => `
+                <div class="model-item ${model.name === currentModel ? 'active' : ''}" 
+                     onclick="switchModel('${model.name}')">
+                    <div class="model-item-header">
+                        <span class="model-item-name">${model.name}</span>
+                        ${model.name === currentModel ? '<span class="model-item-badge">当前</span>' : ''}
+                    </div>
+                    <div class="model-item-api">${model.api_base}</div>
+                    ${model.description ? `<div class="model-item-desc">${model.description}</div>` : ''}
+                </div>
+            `).join('');
+        }
+        
+        async function switchModel(modelName) {
+            try {
+                const response = await fetch('/api/model/switch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model_name: modelName })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    document.getElementById('model-name').textContent = modelName;
+                    closeModelSelector();
+                    
+                    // 显示提示
+                    showToast(`已切换到: ${modelName}\n注意: 需要重启JwClaw才能生效`);
+                } else {
+                    alert('切换失败: ' + result.error);
+                }
+            } catch (error) {
+                console.error('切换模型失败:', error);
+                alert('切换失败: ' + error.message);
+            }
+        }
+        
+        function showAddModelForm() {
+            document.getElementById('add-model-form').style.display = 'block';
+        }
+        
+        function hideAddModelForm() {
+            document.getElementById('add-model-form').style.display = 'none';
+            // 清空表单
+            document.getElementById('model-name-input').value = '';
+            document.getElementById('model-api-input').value = '';
+            document.getElementById('model-key-input').value = '';
+            document.getElementById('model-desc-input').value = '';
+        }
+        
+        async function saveNewModel() {
+            const name = document.getElementById('model-name-input').value.trim();
+            const api_base = document.getElementById('model-api-input').value.trim();
+            const api_key = document.getElementById('model-key-input').value.trim();
+            const description = document.getElementById('model-desc-input').value.trim();
+            
+            if (!name || !api_base || !api_key) {
+                alert('请填写必填字段：模型名称、API地址、API密钥');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/model/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, api_base, api_key, description })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showToast('模型添加成功！');
+                    hideAddModelForm();
+                    loadModels(); // 重新加载列表
+                } else {
+                    alert('添加失败: ' + result.error);
+                }
+            } catch (error) {
+                console.error('添加模型失败:', error);
+                alert('添加失败: ' + error.message);
+            }
+        }
+        
+        function showToast(message) {
+            // 创建简单的toast提示
+            const toast = document.createElement('div');
+            toast.style.cssText = `
+                position: fixed;
+                bottom: 100px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: #000;
+                color: white;
+                padding: 12px 24px;
+                border-radius: 8px;
+                font-size: 14px;
+                z-index: 2000;
+                animation: fadeIn 0.3s ease-in;
+                white-space: pre-line;
+            `;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
 
         socket.on('thinking_content', (data) => {
             // 显示思考过程

@@ -134,6 +134,116 @@ def get_history():
     ]
     return jsonify(history)
 
+@app.route('/api/models')
+def get_models():
+    """获取模型列表"""
+    models_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models.json')
+    
+    if os.path.exists(models_path):
+        with open(models_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return jsonify(data.get('models', []))
+    else:
+        # 返回默认模型
+        return jsonify([{
+            "name": config_cache.get('model', 'unknown'),
+            "api_base": config_cache.get('api_base', ''),
+            "api_key": config_cache.get('api_key', ''),
+            "description": "当前使用的模型"
+        }])
+
+@app.route('/api/model/switch', methods=['POST'])
+def switch_model():
+    """切换模型"""
+    try:
+        data = request.json
+        model_name = data.get('model_name')
+        
+        if not model_name:
+            return jsonify({"success": False, "error": "请指定模型名称"})
+        
+        models_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models.json')
+        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
+        
+        # 加载模型列表
+        if os.path.exists(models_path):
+            with open(models_path, 'r', encoding='utf-8') as f:
+                models_data = json.load(f)
+        else:
+            return jsonify({"success": False, "error": "模型配置文件不存在"})
+        
+        # 查找目标模型
+        target_model = next((m for m in models_data['models'] if m['name'] == model_name), None)
+        
+        if not target_model:
+            return jsonify({"success": False, "error": f"找不到模型: {model_name}"})
+        
+        # 更新config.json
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        config['model'] = target_model['name']
+        config['api_base'] = target_model['api_base']
+        config['api_key'] = target_model['api_key']
+        
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        
+        # 更新models.json中的current
+        models_data['current'] = model_name
+        with open(models_path, 'w', encoding='utf-8') as f:
+            json.dump(models_data, f, indent=2, ensure_ascii=False)
+        
+        return jsonify({"success": True, "message": f"已切换到 {model_name}"})
+        
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/api/model/add', methods=['POST'])
+def add_model():
+    """添加新模型"""
+    try:
+        data = request.json
+        name = data.get('name')
+        api_base = data.get('api_base')
+        api_key = data.get('api_key')
+        description = data.get('description', '')
+        
+        if not name or not api_base or not api_key:
+            return jsonify({"success": False, "error": "缺少必填字段"})
+        
+        models_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models.json')
+        
+        # 加载或创建模型列表
+        if os.path.exists(models_path):
+            with open(models_path, 'r', encoding='utf-8') as f:
+                models_data = json.load(f)
+        else:
+            models_data = {"models": [], "current": name}
+        
+        # 检查是否已存在
+        existing = next((m for m in models_data['models'] if m['name'] == name), None)
+        if existing:
+            return jsonify({"success": False, "error": f"模型 {name} 已存在"})
+        
+        # 添加新模型
+        new_model = {
+            "name": name,
+            "api_base": api_base,
+            "api_key": api_key,
+            "description": description
+        }
+        models_data['models'].append(new_model)
+        
+        # 保存
+        with open(models_path, 'w', encoding='utf-8') as f:
+            json.dump(models_data, f, indent=2, ensure_ascii=False)
+        
+        return jsonify({"success": True, "message": f"已添加模型: {name}"})
+        
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
 @app.route('/api/skills')
 def get_skills():
     """获取Skills列表"""
