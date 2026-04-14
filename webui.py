@@ -7,7 +7,59 @@ JwClaw Web UI - 基于Flask的Web界面
 import os
 import sys
 import json
+import subprocess
 import threading
+
+# 自动安装依赖
+def check_and_install_dependencies():
+    """检查并安装缺失的依赖"""
+    required_packages = [
+        'flask',
+        'flask-socketio',
+        'python-socketio',
+        'simple-websocket'
+    ]
+    
+    missing_packages = []
+    for package in required_packages:
+        try:
+            __import__(package.replace('-', '_'))
+        except ImportError:
+            missing_packages.append(package)
+    
+    if missing_packages:
+        print("\n" + "="*60)
+        print("  📦 检测到缺失的依赖包")
+        print("="*60)
+        print(f"\n缺失的包: {', '.join(missing_packages)}")
+        print("\n正在自动安装...")
+        print("-"*60)
+        
+        try:
+            subprocess.check_call([
+                sys.executable, '-m', 'pip', 'install'
+            ] + missing_packages)
+            
+            print("\n✅ 依赖安装成功！")
+            print("="*60 + "\n")
+            
+            # 重新导入
+            for package in missing_packages:
+                try:
+                    __import__(package.replace('-', '_'))
+                except ImportError:
+                    pass
+                    
+        except subprocess.CalledProcessError as e:
+            print(f"\n❌ 依赖安装失败: {e}")
+            print("\n请手动运行以下命令安装:")
+            print(f"pip install {' '.join(missing_packages)}")
+            input("\n按任意键退出...")
+            sys.exit(1)
+
+# 执行依赖检查
+check_and_install_dependencies()
+
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 
