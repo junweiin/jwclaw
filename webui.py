@@ -213,18 +213,29 @@ def handle_message(data):
         tool_name, raw_args = parse_tool_call(full_reply)
         
         if tool_name:
+            print(f"🔧 检测到工具调用: {tool_name}({raw_args})")
             emit('tool_call', {
                 'tool': tool_name,
                 'args': raw_args
             })
             
             # 执行工具
+            result = ""
             if tool_name == 'create_skill':
-                result = "Skill创建功能在Web UI中暂不支持"
+                result = "Skill创建功能在Web UI中暂不支持，请使用CLI模式"
             elif tool_name in skills_cache:
-                result = execute_skill(skills_cache[tool_name], raw_args)
+                try:
+                    print(f"⚙️  执行技能: {tool_name}")
+                    result = execute_skill(skills_cache[tool_name], raw_args)
+                    print(f"✅ 执行成功，结果长度: {len(result)}")
+                except Exception as e:
+                    print(f"❌ 执行失败: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    result = f"❌ 工具执行错误: {str(e)}"
             else:
-                result = f"未知工具: {tool_name}"
+                print(f"⚠️  未知工具: {tool_name}, 可用工具: {list(skills_cache.keys())[:10]}")
+                result = f"❌ 未知工具: {tool_name}"
             
             emit('tool_result', {
                 'tool': tool_name,
