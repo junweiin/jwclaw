@@ -1849,4 +1849,24 @@ def _main_impl():
             print()
 
 if __name__ == "__main__":
-    main()
+    import sys
+    
+    # 检查命令行参数
+    if len(sys.argv) > 1 and sys.argv[1] in ['--gui', '-g', 'gui']:
+        # 启动 Web GUI
+        print("\n" + "="*60)
+        print("  正在启动 JwClaw Web UI...")
+        print("="*60 + "\n")
+        
+        # 导入并运行 webui
+        try:
+            import subprocess
+            webui_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'webui.py')
+            subprocess.run([sys.executable, webui_path])
+        except Exception as e:
+            print(f"❌ 启动 Web UI 失败: {e}")
+            print("\n请确保已安装依赖: pip install flask flask-socketio")
+            sys.exit(1)
+    else:
+        # 默认 CLI 模式
+        main()

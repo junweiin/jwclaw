@@ -5,6 +5,6 @@ echo   正在启动 JwClaw Web UI...
 echo ========================================
 echo.
 
-python webui.py
+python jwclaw.py --gui
 
 pause
