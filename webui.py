@@ -308,6 +308,15 @@ def main():
     print("📍 访问地址: http://localhost:5000")
     print("⚠️  按 Ctrl+C 停止服务\n")
     
+    # 自动打开浏览器
+    try:
+        import webbrowser
+        print("🔗 正在打开浏览器...")
+        webbrowser.open('http://localhost:5000')
+    except Exception as e:
+        print(f"⚠️  无法自动打开浏览器: {e}")
+        print("请手动访问: http://localhost:5000")
+    
     # 启动Flask应用
     socketio.run(app, host='0.0.0.0', port=5000, debug=False)
 
