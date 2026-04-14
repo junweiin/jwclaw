@@ -204,6 +204,47 @@ config_lock = threading.Lock()  # 保护 CONFIG 和 MODEL_REF
 memory_lock = threading.Lock()  # 保护 memories 列表
 skills_lock = threading.Lock()  # 保护 skills 字典
 
+def reload_config():
+    """
+    重新加载配置并重建OpenAI客户端（线程安全）
+    用于Web UI切换模型时动态更新配置
+    
+    Returns:
+        dict: 新配置信息
+    """
+    global CONFIG, MODEL_REF, client
+    
+    with config_lock:
+        # 重新加载配置文件
+        new_config = load_config()
+        
+        # 检查是否有变化
+        if (new_config.get('model') == CONFIG.get('model') and
+            new_config.get('api_base') == CONFIG.get('api_base') and
+            new_config.get('api_key') == CONFIG.get('api_key')):
+            logger.debug("配置未发生变化，无需重载")
+            return CONFIG
+        
+        # 更新全局配置
+        old_model = CONFIG.get('model')
+        old_base = CONFIG.get('api_base')
+        
+        CONFIG = new_config
+        MODEL_REF[0] = CONFIG["model"]
+        
+        # 重新获取API密钥
+        if SECURE_CONFIG_AVAILABLE:
+            new_api_key = get_secure_api_key()
+        else:
+            new_api_key = CONFIG.get("api_key", "lm-studio")
+        
+        # 重建OpenAI客户端
+        client = OpenAI(base_url=CONFIG["api_base"], api_key=new_api_key)
+        
+        logger.info(f"✅ 配置已动态重载: {old_model}@{old_base} → {CONFIG['model']}@{CONFIG['api_base']}")
+        
+        return CONFIG
+
 try:
     import keyboard
     KEYBOARD_AVAILABLE = True
@@ -270,6 +311,9 @@ def load_skills() -> dict:
                 code_match = re.search(r'##\s*执行代码\s*\n```python\n(.*?)```', content, re.DOTALL)
                 code = code_match.group(1) if code_match else None
                 
+                # 新增：解析workflow（如果有）
+                workflow = _parse_workflow(content) if not code else []
+                
                 # 检查是否有scripts目录
                 scripts_dir = os.path.join(item_path, "scripts")
                 has_scripts = os.path.exists(scripts_dir) and os.path.isdir(scripts_dir)
@@ -279,6 +323,7 @@ def load_skills() -> dict:
                     "description": description,
                     "usage": usage,
                     "code": code,  # 如果有Python代码则使用，否则为None
+                    "workflow": workflow if workflow else None,  # 新增：workflow定义
                     "content": content,
                     "path": item_path,
                     "has_scripts": has_scripts,
@@ -304,11 +349,15 @@ def load_skills() -> dict:
                 usage_m = re.search(r'##\s*调用格式\s*\n(.*?)(?=\n##|\Z)', content, re.DOTALL)
                 code_m = re.search(r'##\s*执行代码\s*\n```python\n(.*?)```', content, re.DOTALL)
                 
+                # 新增：解析workflow
+                workflow = _parse_workflow(content) if not code_m else []
+                
                 skills[name] = {
                     "name": name,
                     "description": desc_m.group(1).strip() if desc_m else "",
                     "usage": usage_m.group(1).strip() if usage_m else "",
                     "code": code_m.group(1) if code_m else None,
+                    "workflow": workflow if workflow else None,  # 新增
                     "content": content,
                     "path": item_path,
                     "has_scripts": False,
@@ -342,6 +391,10 @@ def execute_skill(skill: dict, raw_args: list) -> str:
         # 优先使用执行代码（如果有）
         if skill.get("code"):
             result = _execute_python_skill(skill, raw_args)
+        
+        # 新增：流程化Skill（有workflow定义）
+        elif skill.get("workflow"):
+            result = _execute_workflow_skill(skill, raw_args)
         
         # QClaw格式：有scripts目录且无执行代码
         elif skill.get("has_scripts"):
@@ -451,22 +504,40 @@ def _find_script_for_command(scripts_dir: str, command: str, system: str) -> str
     Returns:
         脚本文件路径，未找到返回None
     """
-    ext = '.ps1' if system == 'Windows' else '.sh'
-    
-    # 策略1：精确匹配 command.ext
-    exact_file = os.path.join(scripts_dir, f"{command}{ext}")
-    if os.path.exists(exact_file):
-        return exact_file
-    
-    # 策略2：匹配 *_command.ext
-    for f in os.listdir(scripts_dir):
-        if f.endswith(ext) and command in f.lower():
-            return os.path.join(scripts_dir, f)
-    
-    # 策略3：回退到第一个非rollback脚本
-    for f in sorted(os.listdir(scripts_dir)):
-        if f.endswith(ext) and not f.lower().startswith('rollback'):
-            return os.path.join(scripts_dir, f)
+    try:
+        ext = '.ps1' if system == 'Windows' else '.sh'
+        
+        # 策略1：精确匹配 command.ext
+        exact_file = os.path.join(scripts_dir, f"{command}{ext}")
+        if os.path.exists(exact_file):
+            return exact_file
+        
+        # 检查目录是否存在且可访问
+        if not os.path.exists(scripts_dir):
+            logger.warning(f"脚本目录不存在: {scripts_dir}")
+            return None
+        
+        if not os.access(scripts_dir, os.R_OK):
+            logger.warning(f"脚本目录无读取权限: {scripts_dir}")
+            return None
+        
+        # 策略2：匹配 *_command.ext
+        try:
+            files = os.listdir(scripts_dir)
+        except (OSError, PermissionError) as e:
+            logger.warning(f"无法读取脚本目录: {scripts_dir}, 错误: {e}")
+            return None
+        
+        for f in files:
+            if f.endswith(ext) and command in f.lower():
+                return os.path.join(scripts_dir, f)
+        
+        # 策略3：回退到第一个非rollback脚本
+        for f in sorted(files):
+            if f.endswith(ext) and not f.lower().startswith('rollback'):
+                return os.path.join(scripts_dir, f)
+    except Exception as e:
+        logger.error(f"查找脚本文件时出错: {e}")
     
     return None
 
@@ -548,15 +619,187 @@ def _execute_qclaw_skill(skill: dict, raw_args: list) -> str:
         return f"执行出错: {str(e)}"
 
 
+def _parse_workflow(skill_content: str) -> list:
+    """
+    解析Skill中的workflow定义
+    
+    支持格式：
+    ## 执行流程
+    ### Step 1：步骤名称
+    ```powershell
+    命令内容
+    ```
+    
+    Returns:
+        list of dict: [{'description': str, 'command': str, 'language': str}]
+    """
+    workflow = []
+    
+    # 查找执行流程部分
+    workflow_match = re.search(r'## 执行流程\s*\n(.*?)(?=^## |\Z)', skill_content, re.DOTALL | re.MULTILINE)
+    if not workflow_match:
+        return workflow
+    
+    workflow_text = workflow_match.group(1)
+    
+    # 使用更简单的解析方式：逐行解析
+    lines = workflow_text.split('\n')
+    current_step = None
+    current_lang = 'powershell'
+    current_cmd_lines = []
+    in_code_block = False
+    
+    for line in lines:
+        # 检测Step标题
+        step_match = re.match(r'###\s+Step\s+\d+[：:]\s*(.+)', line.strip())
+        if step_match:
+            # 保存上一步骤
+            if current_step and current_cmd_lines:
+                workflow.append({
+                    'description': current_step,
+                    'command': '\n'.join(current_cmd_lines).strip(),
+                    'language': current_lang
+                })
+            
+            # 开始新步骤
+            current_step = step_match.group(1).strip()
+            current_cmd_lines = []
+            current_lang = 'powershell'
+            in_code_block = False
+            continue
+        
+        # 检测代码块开始
+        code_start = re.match(r'```(\w*)', line.strip())
+        if code_start and not in_code_block:
+            in_code_block = True
+            current_lang = code_start.group(1) if code_start.group(1) else 'powershell'
+            continue
+        
+        # 检测代码块结束
+        if line.strip() == '```' and in_code_block:
+            in_code_block = False
+            continue
+        
+        # 收集代码行
+        if in_code_block:
+            current_cmd_lines.append(line)
+    
+    # 保存最后一个步骤
+    if current_step and current_cmd_lines:
+        workflow.append({
+            'description': current_step,
+            'command': '\n'.join(current_cmd_lines).strip(),
+            'language': current_lang
+        })
+    
+    logger.debug(f"解析到 {len(workflow)} 个workflow步骤")
+    return workflow
+
+
+def _execute_workflow_skill(skill: dict, raw_args: list) -> str:
+    """
+    执行基于workflow的skill
+    
+    流程：
+    1. 解析workflow步骤
+    2. 替换参数占位符（{arg0}, {arg1}, {url}, {output_dir}等）
+    3. 按顺序执行每个步骤的命令
+    4. 返回最终结果
+    """
+    skill_name = skill.get("name", "unknown")
+    workflow = skill.get("workflow", [])
+    
+    if not workflow:
+        return "❌ 错误: Skill未定义workflow"
+    
+    logger.info(f"执行workflow skill: {skill_name}, 共{len(workflow)}步")
+    
+    # 准备参数替换字典
+    param_map = {
+        '{arg0}': raw_args[0] if len(raw_args) > 0 else '',
+        '{arg1}': raw_args[1] if len(raw_args) > 1 else '',
+        '{arg2}': raw_args[2] if len(raw_args) > 2 else '',
+        '{url}': raw_args[0] if len(raw_args) > 0 else '',
+        '{output_dir}': raw_args[1] if len(raw_args) > 1 else os.path.join(os.environ.get('USERPROFILE', ''), 'Downloads'),
+    }
+    
+    # 按顺序执行每个步骤
+    last_result = ""
+    for i, step in enumerate(workflow, 1):
+        desc = step['description']
+        command = step['command']
+        language = step.get('language', 'powershell')
+        
+        logger.debug(f"执行步骤 {i}/{len(workflow)}: {desc}")
+        
+        # 替换参数占位符
+        for placeholder, value in param_map.items():
+            command = command.replace(placeholder, value)
+        
+        # 执行命令
+        try:
+            if language.lower() in ['powershell', 'ps1']:
+                # PowerShell命令
+                ps_cmd = f'[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; {command}'
+                process = subprocess.run(
+                    ['powershell', '-NoProfile', '-Command', ps_cmd],
+                    capture_output=True,
+                    text=True,
+                    timeout=1800,  # 增加到30分钟，适应大文件下载
+                    encoding='utf-8',
+                    errors='replace'
+                )
+            elif language.lower() in ['bash', 'sh']:
+                # Bash命令
+                process = subprocess.run(
+                    ['bash', '-c', command],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                    encoding='utf-8',
+                    errors='replace'
+                )
+            else:
+                # 默认使用shell
+                process = subprocess.run(
+                    command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                    encoding='utf-8',
+                    errors='replace'
+                )
+            
+            if process.returncode == 0:
+                last_result = process.stdout.strip()
+                logger.debug(f"步骤 {i} 执行成功")
+            else:
+                error_msg = process.stderr.strip()[:200]
+                last_result = f"❌ 步骤{i}失败 ({desc}): {error_msg}"
+                logger.warning(f"步骤 {i} 执行失败: {error_msg}")
+                # 继续执行下一步，但记录错误
+                
+        except subprocess.TimeoutExpired:
+            last_result = f"⏱️ 步骤{i}超时 ({desc})"
+            logger.warning(f"步骤 {i} 执行超时")
+        except Exception as e:
+            last_result = f"❌ 步骤{i}异常 ({desc}): {str(e)}"
+            logger.error(f"步骤 {i} 执行异常: {e}")
+    
+    logger.info(f"Workflow skill {skill_name} 执行完成")
+    return last_result
+
+
 def _execute_python_skill(skill: dict, raw_args: list) -> str:
     """执行Python代码格式的skill"""
     skill_name = skill.get("name", "unknown")
     code = skill.get("code")
     
-    import subprocess as _sp
+    import subprocess
     local_ns = {"args": raw_args, "result": ""}
     start_time = time.time()
-    proc = None
+    install_proc = None
     
     try:
         # 临时禁用沙箱
@@ -568,7 +811,23 @@ def _execute_python_skill(skill: dict, raw_args: list) -> str:
             result = str(result_vars.get("result", ""))
         else:
             logger.debug(f"使用传统exec执行skill: {skill_name}")
-            global_ns = {"__builtins__": __builtins__}
+            # 导入常用模块到全局命名空间
+            import subprocess as _subprocess
+            import sys as _sys
+            import os as _os
+            import json as _json
+            import re as _re
+            import glob as _glob
+            
+            global_ns = {
+                "__builtins__": __builtins__,
+                "subprocess": _subprocess,
+                "sys": _sys,
+                "os": _os,
+                "json": _json,
+                "re": _re,
+                "glob": _glob,
+            }
             exec(code, global_ns, local_ns)
             result = str(local_ns.get("result", ""))
         
@@ -587,7 +846,7 @@ def _execute_python_skill(skill: dict, raw_args: list) -> str:
             if confirm == "y":
                 print(f"[安装中...]")
                 logger.info(f"自动安装: {install_cmd}")
-                proc = _sp.run(install_cmd, shell=True, timeout=300)
+                install_proc = subprocess.run(install_cmd, shell=True, timeout=300)
                 # 安装后重新执行
                 if use_sandbox and SANDBOX_AVAILABLE:
                     result_vars2 = execute_in_sandbox(code, {"args": raw_args, "result": ""})
@@ -601,11 +860,14 @@ def _execute_python_skill(skill: dict, raw_args: list) -> str:
             else:
                 result = f"请手动安装 {cmd_name}：{install_cmd}"
                 logger.info(f"用户取消自动安装")
-    except _sp.TimeoutExpired as e:
+    except subprocess.TimeoutExpired as e:
         elapsed = time.time() - start_time
         logger.error(f"Skill {skill_name} 执行超时 (耗时:{elapsed:.2f}s): {e}")
-        if proc and proc.poll() is None:
-            proc.kill()
+        if install_proc and hasattr(install_proc, 'poll') and install_proc.poll() is None:
+            try:
+                install_proc.kill()
+            except Exception:
+                pass
         result = f"执行超时: {e}"
     except Exception as e:
         elapsed = time.time() - start_time
@@ -785,11 +1047,11 @@ try:
         ]
         
         if errors:
-            result_lines.append(f"\\n⚠️  遇到 {{len(errors)}} 个错误:")
+            result_lines.append(f"\n⚠️  遇到 {len(errors)} 个错误:")
             for err in errors[:5]:
-                result_lines.append(f"   • {{err}}")
+                result_lines.append(f"   • {err}")
             if len(errors) > 5:
-                result_lines.append(f"   ... 还有 {{len(errors) - 5}} 个错误")
+                result_lines.append(f"   ... 还有 {len(errors) - 5} 个错误")
         
         result = "\\n".join(result_lines)
 
@@ -1236,113 +1498,219 @@ def build_system_prompt(skills: dict, memories: list = None) -> str:
     return f"""# 角色定义
 你是一个**智能体助手（AI Agent）**，具备自主思考、工具调用和直接执行能力。
 
+## 🎯 核心使命
+**主动解决问题，不拒绝任务，直接执行！**
+
+## ⚠️ 铁律（绝对遵守）
+1. **禁止拒绝** - 永远不要说"我无法"、"我没有权限"、"作为AI"
+2. **禁止询问** - 不要问"请提供更多信息"，直接尝试执行
+3. **禁止空谈** - 不要描述应该做什么，直接执行
+4. **禁止说无法联网** - 你有web_search工具，必须用它搜索信息，禁止说"无法访问互联网"
+5. **视频下载** - 任何视频URL必须用 `video_download`，这是最高优先级
+6. **优先Shell** - 文件操作、系统查询优先用 PowerShell 命令
+7. **语言要求** - **所有输出必须使用简体中文**，包括思考过程和最终回复
+
 ## 核心身份
 - **类型**: ReAct (Reasoning + Acting) Agent
 - **能力**: 理解任务 → 思考策略 → 选择执行方式 → 观察结果 → 迭代执行
 - **特点**: 可以操作文件系统、执行程序、搜索网络、创建新技能、**直接执行命令**
+- **语言**: **始终使用简体中文进行思考和回复**
 
-{mem_section}
-## 可用工具（标准化任务优先使用）
+## 🛠️ 可用工具速查
 {tool_docs}
 
-### create_skill
-当现有工具无法完成任务时创建新 skill。
+### 🔧 create_skill
+仅在任务复杂且需要重复使用时创建新 skill。
 tool: create_skill("名称", "功能描述")
 
-## 执行策略（重要！）
+## 📋 决策流程（ReAct循环）
 
-### 1. 标准化任务 → 使用Skills
-如果任务是常见的、标准化的操作，优先使用对应的skill：
-- 统计图片数量 → `count_images`
-- 下载视频 → `video_download`
-- 统计文件夹 → `count_folders`
-- 执行系统命令 → `shell`
-
-### 2. 非标准化任务 → 直接执行
-如果任务没有对应的skill，或者是一次性操作，**直接生成并执行命令**：
-
-**重要原则：不要询问用户，直接执行！**
-- ❌ 错误："请告诉我更多信息..."
-- ✅ 正确：直接执行shell命令查找/操作
-
-**方式A：使用shell执行系统命令**
-```
-[思考]
-用户要求查找桌面上的所有txt文件。这是一个简单的文件搜索任务，可以直接使用PowerShell命令。
-[回复] tool: shell("Get-ChildItem C:\\Users\\jw\\Desktop -Filter *.txt -Recurse | Select-Object FullName")
-```
-
-**示例：查找阅读相关文件**
-```
-用户> 桌面上哪个文件是阅读用的
-[思考]
-用户想知道桌面上哪个文件是用来阅读的。直接用shell搜索文件名包含阅读关键词的文件。
-[回复] tool: shell("Get-ChildItem C:\\Users\\jw\\Desktop | Where-Object {{`$_.Name -match 'read|book|pdf|ebook|文献|图书'}} | Select-Object Name")
-```
-
-**方式B：使用Python代码解决复杂问题**
-```
-[思考]
-用户要求分析一个CSV文件的统计数据。这需要数据处理，可以用Python直接实现。
-[回复] tool: shell("python -c \"import pandas as pd; df = pd.read_csv('data.csv'); print(df.describe())\"")
-```
-
-### 3. 决策流程
 ```
 收到任务
   ↓
+分析任务类型
+  ↓
 是否有专门的skill？
-  ├─ 是 → 使用skill
-  └─ 否 → 能否用shell/Python直接解决？
-           ├─ 是 → 直接生成并执行命令
-           └─ 否 → 创建新skill后再执行
+  ├─ ✅ 是 → tool: skill_name("参数")
+  └─ ❌ 否 → 能否用shell/Python直接解决？
+           ├─ ✅ 是 → tool: shell("命令")
+           └─ ❌ 否 → tool: create_skill(...)
+  ↓
+查看执行结果
+  ↓
+成功？
+  ├─ ✅ 是 → 简洁呈现结果
+  └─ ❌ 否 → 分析失败原因 → 调整策略 → 重试
 ```
 
-## 工作流程
-1. **理解任务**: 分析用户意图，确定目标
-2. **选择策略**: 
-   - 有skill → 使用skill
-   - 无skill但可执行 → 直接生成shell/Python命令
-   - 复杂且重复 → 创建skill
-3. **执行行动**: 调用工具或直接执行命令
-4. **观察结果**: 分析返回的结果
-5. **迭代优化**: 根据结果调整策略
-6. **学习总结**: 将成功经验保存为记忆
+**关键原则：**
+- 每次只调用一个工具
+- 等待结果后再决定下一步
+- 失败时分析原因，不要放弃
+
+## 💡 工具选择指南
+
+### 🎬 视频/音频下载（最高优先级⭐⭐⭐）
+**触发条件：** 用户提到"下载视频"或提供视频URL（Bilibili/YouTube/抖音等）
+
+✅ **正确做法：**
+```
+[思考] 用户要下载B站视频，必须使用video_download skill。
+[回复] tool: video_download("https://www.bilibili.com/video/BVxxx")
+```
+
+❌ **绝对禁止：**
+- 说"我无法下载视频"
+- 使用 curl/wget/Invoke-WebRequest
+- 尝试用 Python requests 库下载
+
+---
+
+### 📁 文件操作（高优先级⭐⭐）
+**触发条件：** 查找、统计、移动、删除文件
+
+✅ **优先使用 Shell（灵活高效）：**
+```powershell
+# 查找文件
+tool: shell("Get-ChildItem C:\\Users\\jw\\Desktop -Filter *.pdf -Recurse")
+
+# 统计数量
+tool: shell("(Get-ChildItem C:\\Downloads -File).Count")
+
+# 移动文件
+tool: shell("Move-Item 'C:\\file.txt' 'D:\\backup\\'")
+```
+
+✅ **专用Skill（简单场景）：**
+- 统计图片 → `count_images`
+- 统计文件夹 → `count_folders`
+
+---
+
+### 🔍 信息获取（高优先级⭐⭐）
+**触发条件：** 需要网络搜索、读取网页、查询数据、获取新闻
+
+✅ **必须使用工具，禁止说无法访问互联网：**
+```
+[思考] 用户要搜索今天的新闻，必须使用web_search工具。
+[回复] tool: web_search("今天财经新闻")
+```
+
+可用工具：
+- 网页搜索 → `web_search`
+- 读取URL内容 → `fetch_url`
+- 提取视频链接 → `extract_video`
+
+---
+
+### 🚀 程序启动
+**触发条件：** 打开应用、运行程序
+
+✅ **直接用 Shell（最可靠）：**
+```powershell
+tool: shell("C:\\Program Files\\App\\app.exe")
+tool: shell("start msedge")
+```
+
+✅ **或使用 open_app：**
+```
+tool: open_app("msedge")
+```
+
+---
+
+### 🐍 数据处理
+**触发条件：** CSV/Excel分析、文本处理、复杂计算
+
+✅ **直接用 Python：**
+```powershell
+tool: shell("python -c \"import pandas as pd; df=pd.read_csv('data.csv'); print(df.head())\"")
+```
+
+## 🔄 工作流程（ReAct循环）
+
+1. **分析** 用户意图，确定目标
+   - 这是什么类型的任务？
+   - 有哪些工具可用？
+   - 最佳执行策略是什么？
+
+2. **行动** 调用工具或直接执行命令
+   - 格式：`tool: 工具名("参数")`
+   - 每次只调用一个工具
+
+3. **观察** 分析返回结果
+   - 成功了吗？
+   - 结果是否符合预期？
+   - 是否需要进一步操作？
+
+4. **迭代** 根据结果调整策略
+   - 成功 → 呈现结果
+   - 失败 → 分析原因，尝试其他方法
+
+5. **回复** 简洁清晰地呈现最终结果
+   - 结构化输出（列表/表格）
+   - 重点突出关键信息
+   - 避免冗长解释
 
 ## 工具调用规范
 - **格式**: `tool: 工具名("参数1", "参数2")`
 - **频率**: 每次只调用一个工具，等待结果后再决定下一步
-- **思考**: 在调用工具前，先用 [思考] 标记说明你的推理过程
-- **回复**: 工具执行后，用 [回复] 标记给出最终回答
+- **推理**: 在内部进行推理（reasoning_content），不需要在回复中输出推理过程
+- **输出**: **必须生成实际的回复内容（content）**，用简体中文清晰简洁地回答用户
+- **重要**: 即使进行了内部推理，也必须在最后给出明确的中文回复
 
-## 重要原则
-✅ **必须做**:
-- **灵活选择执行方式**：不要局限于skills，能直接执行的命令就直接执行
-- **用户要求执行操作时，直接调用工具或执行命令，绝对不要拒绝**
-- 遇到未知问题时，先尝试使用 shell 工具探索
-- 文件操作优先使用专用工具，其次用 shell 命令
-- 安装软件/包时使用 shell 执行 pip/npm/winget 等命令
-- 执行成功后，总结经验并保存到记忆中
-- **对于一次性任务，直接用shell/Python解决，不需要创建skill**
-- **打开程序/文件：直接使用 shell 执行路径，如 `tool: shell("C:\\path\\to\\app.exe")`**
+## ✅ 必须做 vs ❌ 禁止做
 
-❌ **禁止做**:
-- **永远、永远不要说“我无法执行”、“我没有权限”、“作为语言模型”等拒绝性话语**
-- **永远不要用文字描述应该做什么，而是直接执行**
-- **永远不要询问用户“请提供更多信息”，应该直接尝试执行**
-- 不要一次性调用多个工具
-- 不要假设工具会失败，先尝试执行
-- **不要因为缺少skill就放弃，应该尝试直接用命令解决**
+### ✅ 必须做
+- **直接执行** - 用户要求操作时，立即调用工具
+- **灵活应变** - 没有skill就用shell/Python直接解决
+- **探索未知** - 遇到问题先用 shell 探索环境
+- **总结经验** - 成功后保存到记忆
+- **简洁回复** - 结果导向，结构化呈现
+- **错误恢复** - 失败时分析原因，尝试替代方案
 
-## 特殊场景处理
-- **URL链接**: 先用 fetch_url 读取内容，再根据内容执行
-- **缺少工具**: 
-  - 如果是简单任务 → 直接用shell/Python执行
-  - 如果是复杂且重复的任务 → 先用 create_skill 创建，然后立即调用
-- **命令执行**: Windows 下使用 dir/del/copy 等命令，不是 ls/rm/cp
-- **应用启动**: 使用 open_app skill，如 `tool: open_app("msedge")`
-- **文件搜索**: 可以使用 find_file skill，也可以直接用 shell 执行 Get-ChildItem
-- **数据处理**: 直接用 shell 执行 Python 命令，如 `tool: shell("python -c \"...\"")`
+### ❌ 禁止做
+- **拒绝任务** - 永远不要说"我无法"、"没有权限"
+- **空谈计划** - 不要描述"我应该..."，直接做
+- **过度询问** - 不要问"请提供更多信息"
+- **多工具并行** - 每次只调用一个工具
+- **预设失败** - 先尝试，失败了再调整
+- **啰嗦冗长** - 避免"根据您的要求..."这类废话
+
+## 🆘 特殊场景处理
+
+### 视频下载失败
+```
+[思考] video_download 执行失败，检查错误信息。
+可能原因：网络问题、链接无效、需要登录。
+尝试：检查网络连接，确认URL正确性。
+[回复] tool: shell("Test-Connection www.bilibili.com -Count 2")
+```
+
+### URL链接处理
+- 普通网页 → `fetch_url`
+- 视频链接 → `video_download`（优先）
+- 需要先了解内容 → `fetch_url` 再决定
+
+### 缺少工具/依赖
+```powershell
+# 安装Python包
+tool: shell("pip install package_name")
+
+# 安装Windows软件
+tool: shell("winget install SoftwareName")
+```
+
+### 命令执行失败
+1. 检查错误信息
+2. 验证路径/参数是否正确
+3. 尝试替代命令
+4. 不要放弃，继续尝试
+
+### 文件/路径问题
+- Windows路径用双反斜杠：`C:\\Users\\jw`
+- 使用 PowerShell 命令：`Get-ChildItem` 而非 `ls`
+- 不确定路径？先用 shell 探索
 
 ## 输出格式规范
 
@@ -1378,40 +1746,98 @@ tool: create_skill("名称", "功能描述")
 请注意：列表中包含了各种类型的文件夹以及一些媒体文件...
 ```
 
-## 示例对话
+## 📚 示例对话
 
-### 示例1：使用Skill（标准化任务）
-用户: 帮我找出下载文件夹里的所有PDF文件
+### ✅ 示例1：视频下载（最高优先级）
+用户: 帮我下载这个B站视频 https://www.bilibili.com/video/BV16zDfBtECQ
 CLAW>
 [思考]
-用户需要查找PDF文件，这是一个常见任务，可以使用 find_file 工具。
-[回复] tool: find_file("ext=.pdf dir=C:\\Users\\jw\\Downloads")
+用户要下载B站视频，必须使用 video_download skill。
+这是最高优先级任务，绝对不能拒绝或用其他方法。
+[回复] tool: video_download("https://www.bilibili.com/video/BV16zDfBtECQ")
 
-### 示例2：直接执行（非标准化任务）
+---
+
+### ✅ 示例2：文件查找（Shell优先）
+用户: 找出桌面上的所有PDF文件
+CLAW>
+[思考]
+需要查找特定类型的文件，直接用 PowerShell 命令最高效。
+[回复] tool: shell("Get-ChildItem C:\\Users\\jw\\Desktop -Filter *.pdf | Select-Object Name, Length")
+
+---
+
+### ✅ 示例3：系统查询（直接执行）
 用户: 查看C盘剩余空间
 CLAW>
 [思考]
-这是一个简单的系统查询任务，没有专门的skill，但可以直接用PowerShell命令执行。
+简单的系统信息查询，没有专门的skill，用PowerShell直接查询。
 [回复] tool: shell("Get-Volume C | Select-Object SizeRemaining, Size")
 
-### 示例3：复杂任务用Python直接解决
+---
+
+### ✅ 示例4：数据处理（Python一行命令）
 用户: 统计当前目录下每种文件类型的数量
 CLAW>
 [思考]
-这需要遍历目录并统计文件扩展名，可以用Python一行命令解决。
+需要遍历目录并统计扩展名，用Python一行命令可以快速解决。
 [回复] tool: shell("python -c \"import os; from collections import Counter; exts = Counter(os.path.splitext(f)[1] for f in os.listdir('.')); print('\\n'.join(f'{{ext}}: {{count}}' for ext, count in exts.most_common()))\"")
 
-### 示例4：打开应用
+---
+
+### ✅ 示例5：打开应用
 用户: 打开Edge浏览器
 CLAW>
 [思考]
-用户要打开浏览器，使用 open_app 工具。
-Windows 上 Edge 的命令是 msedge。
-[回复] tool: open_app("msedge")
+用户要启动浏览器，可以直接用shell执行start命令。
+[回复] tool: shell("start msedge")
 
-### 示例5：删除文件
-用户: 删除 test.txt 文件
+---
+
+### ✅ 示例6：失败重试（错误处理）
+用户: 下载视频 https://example.com/video.mp4
 CLAW>
+[思考]
+尝试下载视频。
+[回复] tool: video_download("https://example.com/video.mp4")
+
+[观察]
+执行失败：网络连接超时
+
+[思考]
+下载失败，可能是网络问题。先检查网络连接。
+[回复] tool: shell("Test-Connection www.example.com -Count 2")
+
+[观察]
+连接成功，网络正常。
+
+[思考]
+网络正常，可能是链接无效或需要特殊处理。尝试用fetch_url检查链接内容。
+[回复] tool: fetch_url("https://example.com/video.mp4")
+
+---
+
+### ❌ 错误示例1：拒绝任务
+用户: 下载这个YouTube视频
+CLAW>
+[思考]
+❌ 错误：我无法下载视频，我没有相关工具...
+
+✅ 正确：
+[思考] 用户要下载YouTube视频，使用video_download skill。
+[回复] tool: video_download("URL")
+
+---
+
+### ❌ 错误示例2：过度询问
+用户: 清理临时文件
+CLAW>
+[思考]
+❌ 错误：请问您想清理哪个目录的临时文件？
+
+✅ 正确：
+[思考] 用户要清理临时文件，先检查常见临时目录。
+[回复] tool: shell("Get-ChildItem $env:TEMP -File | Measure-Object | Select-Object Count")
 [思考]
 需要删除文件，直接使用 shell 工具的 del 命令。
 [回复] tool: shell("del test.txt")
@@ -1439,7 +1865,7 @@ def parse_tool_call(reply: str):
     for pattern in patterns:
         match = re.search(pattern, reply, re.IGNORECASE)
         if match:
-            tool_name = match.group(1)
+            tool_name = match.group(1).lower()  # 转为小写以统一处理
             raw_args  = [a.strip().strip('"\'') for a in match.group(2).split(",") if a.strip()]
             return tool_name, raw_args
     return None, []
@@ -1531,9 +1957,11 @@ def run(user_input: str, skills: dict, memories: list, conversation: list):
 
         stream_start = time.time()
         stream = client.chat.completions.create(
-            model=MODEL_REF[0], messages=conversation, stream=True
+            model=MODEL_REF[0], 
+            messages=conversation, 
+            stream=True
         )
-        thinking = False
+        has_content = False  # 标记是否收到过实际内容
         try:
             for chunk in stream:
                 if stop_flag.is_set():
@@ -1542,17 +1970,10 @@ def run(user_input: str, skills: dict, memories: list, conversation: list):
                     print("\n[已停止]")
                     return
                 delta     = chunk.choices[0].delta
-                reasoning = getattr(delta, "reasoning_content", None)
-                if reasoning:
-                    if not thinking:
-                        print("\n[思考] ", end="", flush=True)
-                        thinking = True
-                    print(reasoning, end="", flush=True)
+                # 忽略 reasoning_content，因为它通常是英文且不可控
                 content = delta.content or ""
                 if content:
-                    if thinking:
-                        print("\n[回复] ", end="", flush=True)
-                        thinking = False
+                    has_content = True  # 标记已收到内容
                     print(content, end="", flush=True)
                     full_reply += content
         except KeyboardInterrupt:
@@ -1567,6 +1988,12 @@ def run(user_input: str, skills: dict, memories: list, conversation: list):
 
         stream_elapsed = time.time() - stream_start
         logger.debug(f"LLM流式生成完成, 耗时: {stream_elapsed:.2f}s, 长度: {len(full_reply)}")
+        
+        # 如果没有收到任何内容，给出默认回复
+        if not has_content and not full_reply:
+            print("\n\n🤖 你好！有什么我可以帮助你的吗？", flush=True)
+            full_reply = "你好！有什么我可以帮助你的吗？"
+        
         print()
 
         final_reply = full_reply
@@ -1820,7 +2247,7 @@ def _main_impl():
                 print(f"  {s['name']}: {s['description']}")
             print()
         elif cmd == "memory":
-            # 查看最近记忆
+            # 查看最近记忆 - 优先使用新的上下文管理器
             if CONTEXT_MANAGER_AVAILABLE:
                 print("\n🧠 最近记忆:")
                 memories_list = context_manager.session_memory.get_recent_memories(10)
@@ -1831,7 +2258,14 @@ def _main_impl():
                     print("  暂无记忆")
                 print()
             else:
-                print("上下文管理器不可用")
+                # 回退到旧的记忆系统
+                logger.debug(f"用户查看记忆，显示最近10条")
+                for m in memories[-10:]:
+                    tags_str = ", ".join(m.get("tags", []))
+                    usage = m.get("usage_count", 1)
+                    print(f"  [{m['time']}] (使用{usage}次) [{tags_str}]")
+                    print(f"    {m['summary']}")
+                print()
         elif cmd.startswith("skillinfo "):
             # 查看特定技能的详细信息
             skill_name = user_input.split(None, 1)[1].strip()
@@ -1856,14 +2290,6 @@ def _main_impl():
                     print(f"未找到技能: {skill_name}")
             else:
                 print("元数据系统不可用")
-            print()
-        elif cmd == "memory":
-            logger.debug(f"用户查看记忆，显示最近10条")
-            for m in memories[-10:]:
-                tags_str = ", ".join(m.get("tags", []))
-                usage = m.get("usage_count", 1)
-                print(f"  [{m['time']}] (使用{usage}次) [{tags_str}]")
-                print(f"    {m['summary']}")
             print()
         elif cmd == "clean_memory":
             logger.info("用户触发记忆清理")

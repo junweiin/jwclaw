@@ -6,6 +6,11 @@
 ## 调用格式
 tool: open_app("应用名称或路径")
 
+## 命令列表
+| 命令 | 说明 | 参数 |
+|------|------|------|
+| open_app | 打开应用程序或文件 | 应用名称或路径 |
+
 参数说明：
 - 应用名称：如 "chrome", "edge", "notepad", "code" 等
 - 完整路径：如 "C:\Program Files\App\app.exe"

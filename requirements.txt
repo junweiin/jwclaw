@@ -1,15 +1,5 @@
-# JwClaw 依赖包
+# JwClaw - 极简智能体依赖
+# 仅保留核心依赖
 
-# 核心依赖
+# LLM客户端
 openai>=1.0.0
-
-# Web UI依赖
-flask>=3.0.0
-flask-socketio>=5.3.0
-python-socketio>=5.10.0
-simple-websocket>=1.0.0
-
-# 可选依赖（用于高级功能）
-# yt-dlp>=2024.0.0  # 视频下载
-# cryptography>=41.0.0  # 加密配置
-# pandas>=2.0.0  # 数据处理

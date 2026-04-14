@@ -70,7 +70,20 @@ try:
             # 如果没有requests库，提供备选方案
             result = f"⚠️  需要安装requests库才能使用网络搜索\n\n请运行: pip install requests\n\n或者直接使用浏览器搜索: https://www.bing.com/search?q={quote(query)}"
         except Exception as e:
-            result = f"❌ 搜索失败: {str(e)}\n\n提示: 请检查网络连接"
+            # API 调用失败，提供搜索链接作为备选
+            search_links = [
+                f"🔍 搜索: {query}",
+                "=" * 50,
+                "",
+                "⚠️  实时搜索暂时不可用，您可以通过以下链接手动搜索:",
+                "",
+                f"📎 Bing: https://www.bing.com/search?q={quote(query)}",
+                f"📎 Google: https://www.google.com/search?q={quote(query)}",
+                f"📎 百度: https://www.baidu.com/s?wd={quote(query)}",
+                "",
+                "💡 提示: 如需自动搜索功能，请检查网络连接或配置代理。"
+            ]
+            result = "\n".join(search_links)
             
 except Exception as e:
     result = f"❌ 执行出错: {str(e)}"

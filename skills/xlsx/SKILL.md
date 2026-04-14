@@ -363,3 +363,49 @@ The script returns JSON with error details:
 - Add comments to cells with complex formulas or important assumptions
 - Document data sources for hardcoded values
 - Include notes for key calculations and model sections
+
+## 执行代码
+```python
+import os
+import sys
+from pathlib import Path
+
+query = args[0].strip() if args else ""
+
+if not query:
+    result = "❌ 请提供具体任务，例如：创建一个包含姓名和年龄的表格"
+else:
+    try:
+        # 尝试使用 openpyxl 创建简单示例
+        from openpyxl import Workbook
+        
+        # 创建工作簿
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Sheet1"
+        
+        # 添加示例数据
+        ws['A1'] = "姓名"
+        ws['B1'] = "年龄"
+        ws['A2'] = "张三"
+        ws['B2'] = 25
+        ws['A3'] = "李四"
+        ws['B3'] = 30
+        
+        # 设置列宽
+        ws.column_dimensions['A'].width = 15
+        ws.column_dimensions['B'].width = 10
+        
+        # 保存到 workspace 目录
+        output_dir = Path("workspace")
+        output_dir.mkdir(exist_ok=True)
+        output_file = output_dir / "example.xlsx"
+        wb.save(str(output_file))
+        
+        result = f"✅ 已创建示例表格: {output_file}\n\n内容:\n姓名 | 年龄\n张三 | 25\n李四 | 30\n\n提示: 这是一个简单示例。如需更复杂的功能，请安装 pandas 和 openpyxl，并提供具体数据要求。"
+        
+    except ImportError:
+        result = "❌ 需要安装 openpyxl 才能创建 Excel 文件\n\n请运行: pip install openpyxl"
+    except Exception as e:
+        result = f"❌ 创建失败: {str(e)}"
+```

@@ -150,6 +150,7 @@ python3 scripts/weather_advisor_tool.py alert --city Beijing --days 3
 import subprocess
 import sys
 import os
+from pathlib import Path
 
 try:
     # 解析参数
@@ -167,12 +168,45 @@ try:
     elif "预警" in query or "alert" in query.lower() or "警" in query:
         command = "alert"
     
-    # 构建脚本路径 - 直接使用绝对路径
-    script_path = r"C:\Users\jw\Desktop\agent\skills\weather-advisor\scripts\weather_advisor_tool.py"
+    # 动态查找脚本路径
+    # 从当前执行环境推断 skills 目录位置
+    possible_paths = [
+        # 相对于当前工作目录
+        Path("skills/weather_advisor/scripts/weather_advisor_tool.py"),
+        Path("weather_advisor/scripts/weather_advisor_tool.py"),
+        # 相对于脚本位置（如果知道）
+        Path(__file__).parent / "scripts" / "weather_advisor_tool.py" if '__file__' in dir() else None,
+    ]
+    
+    script_path = None
+    for p in possible_paths:
+        if p and p.exists():
+            script_path = str(p.resolve())
+            break
+    
+    # 如果找不到，使用相对路径尝试
+    if not script_path:
+        script_path = "skills/weather_advisor/scripts/weather_advisor_tool.py"
     
     # 检查脚本是否存在
     if not os.path.exists(script_path):
-        result = f"❌ 错误: 找不到脚本文件 {script_path}"
+        # 脚本不存在，提供备用方案 - 使用在线天气服务链接
+        result_lines = [
+            f"🌤️  天气查询",
+            f"━━━━━━━━━━━━━━━━━━━━━━",
+            f"",
+            f"⚠️  本地天气工具未配置",
+            f"",
+            f"您可以通过以下方式查看天气:",
+            f"",
+            f"📎 中国天气网: http://www.weather.com.cn/",
+            f"📎 百度天气: https://www.baidu.com/s?wd={city}+天气",
+            f"📎 Bing天气: https://www.bing.com/search?q=weather+{city}",
+            f"",
+            f"💡 提示: 如需启用本地天气查询，请确保文件存在:",
+            f"   skills/weather_advisor/scripts/weather_advisor_tool.py",
+        ]
+        result = "\n".join(result_lines)
     else:
         # 执行Python脚本
         cmd = [sys.executable, script_path, command, "--city", city]

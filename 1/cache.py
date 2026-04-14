@@ -177,9 +177,12 @@ class SimpleCache:
         }
 
 
+# 获取脚本所在目录，确保缓存目录位置正确
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+
 # 全局缓存实例
-llm_cache = SimpleCache(cache_dir="cache/llm", ttl=7200)  # LLM缓存2小时
-skill_cache = SimpleCache(cache_dir="cache/skills", ttl=3600)  # 技能缓存1小时
+llm_cache = SimpleCache(cache_dir=os.path.join(_script_dir, "cache", "llm"), ttl=7200)  # LLM缓存2小时
+skill_cache = SimpleCache(cache_dir=os.path.join(_script_dir, "cache", "skills"), ttl=3600)  # 技能缓存1小时
 
 
 def cache_llm_response(prompt: str, response: str, ttl: int = 7200):

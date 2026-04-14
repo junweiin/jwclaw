@@ -693,7 +693,11 @@
     
     <script>
         // 初始化Socket.IO
-        const socket = io();
+        const socket = io({
+            transports: ['websocket', 'polling'],  // 允许降级到polling
+            reconnection: true,
+            reconnectionAttempts: 5
+        });
         let currentMessageDiv = null;
         let isThinking = false;
 
@@ -776,10 +780,17 @@
             socket.emit('send_message', { message: message });
         }
 
-        // 处理回车键
+        // 处理回车键 - Enter发送，Shift+Enter换行
         function handleKeyPress(event) {
             if (event.key === 'Enter') {
-                sendMessage();
+                if (event.shiftKey) {
+                    // Shift+Enter 换行，不阻止默认行为
+                    return;
+                } else {
+                    // 仅Enter发送消息
+                    event.preventDefault();
+                    sendMessage();
+                }
             }
         }
 
@@ -814,9 +825,10 @@
             
             const messageDiv = document.createElement('div');
             messageDiv.className = 'message assistant-message';
+            // 初始显示加载指示器，等待内容更新
             messageDiv.innerHTML = `
                 <div class="message-content markdown-content">
-                    ${marked.parse(content)}
+                    <span style="color: #999;">思考中...</span>
                 </div>
             `;
             messagesDiv.appendChild(messageDiv);
@@ -1079,10 +1091,22 @@
             scrollToBottom();
         });
 
+        // 用于累积流式内容的变量
+        let accumulatedContent = '';
+        let lastDisplayContent = ''; // 用于检测内容变化
+        
+        // 工具调用正则表达式 - 匹配 tool: name("args") 格式
+        const toolCallRegex = /tool:\s*\w+\s*\([^)]*\)/gi;
+        
         socket.on('reply_content', (data) => {
+            console.log('[DEBUG] reply_content:', data);
+            
             // 流式接收回复内容
             if (!currentMessageDiv) {
+                console.log('[DEBUG] 创建新的消息div');
                 currentMessageDiv = addAssistantMessage('');
+                accumulatedContent = '';  // 重置累积内容
+                lastDisplayContent = '';
             }
             
             const contentDiv = currentMessageDiv.querySelector('.markdown-content');
@@ -1095,7 +1119,36 @@
             
             // 添加新内容
             if (data.type !== 'separator') {
-                contentDiv.innerHTML += data.content;
+                accumulatedContent += data.content;
+                console.log('[DEBUG] 收到内容:', data.content);
+                console.log('[DEBUG] 累积内容长度:', accumulatedContent.length);
+                
+                // 检测是否包含工具调用
+                const hasToolCall = toolCallRegex.test(accumulatedContent);
+                toolCallRegex.lastIndex = 0; // 重置正则表达式
+                
+                // 过滤掉工具调用，只显示自然语言回复
+                let displayContent = accumulatedContent.replace(toolCallRegex, '').trim();
+                console.log('[DEBUG] 过滤后内容长度:', displayContent.length, '有工具调用:', hasToolCall);
+                
+                // 如果过滤后内容为空但有工具调用，显示提示
+                if (!displayContent && hasToolCall) {
+                    displayContent = '*正在执行操作...*';
+                }
+                
+                // 只有当内容真正变化时才更新显示
+                if (displayContent !== lastDisplayContent) {
+                    lastDisplayContent = displayContent;
+                    
+                    // 如果内容为空，显示等待提示（直接用HTML，不走marked.parse）
+                    if (!displayContent) {
+                        contentDiv.innerHTML = '<span style="color: #999;">思考中...</span>';
+                    } else {
+                        // 使用 marked.parse 解析 Markdown
+                        console.log('[DEBUG] 更新显示内容:', displayContent.substring(0, 50) + '...');
+                        contentDiv.innerHTML = marked.parse(displayContent);
+                    }
+                }
             }
             
             // 使用requestAnimationFrame优化滚动性能
@@ -1105,26 +1158,63 @@
         });
 
         socket.on('message_complete', (data) => {
+            console.log('[DEBUG] message_complete:', data);
+            
+            // 如果有最终回复数据，更新消息内容
+            if (data.reply && currentMessageDiv) {
+                const contentDiv = currentMessageDiv.querySelector('.markdown-content');
+                // 过滤掉工具调用，只显示自然语言回复
+                let displayContent = data.reply.replace(toolCallRegex, '').trim();
+                console.log('[DEBUG] 最终显示内容长度:', displayContent.length);
+                
+                if (displayContent) {
+                    contentDiv.innerHTML = marked.parse(displayContent);
+                } else {
+                    contentDiv.innerHTML = '<span style="color: #999;">操作已完成</span>';
+                }
+            } else {
+                console.log('[DEBUG] 无最终回复或消息div不存在');
+            }
             currentMessageDiv = null;
+            accumulatedContent = '';  // 重置累积内容
+            lastDisplayContent = '';  // 重置显示内容缓存
             hideTypingIndicator();
         });
 
         socket.on('tool_call', (data) => {
             addToolCall(data.tool, data.args);
+            // 工具调用时重置当前消息div，让下一轮回复创建新消息
+            currentMessageDiv = null;
+            accumulatedContent = '';
+            lastDisplayContent = '';
         });
 
         socket.on('tool_result', (data) => {
             addToolResult(data.tool, data.result);
+            // 工具结果返回后，准备接收新的回复
+            currentMessageDiv = null;
+            accumulatedContent = '';
+            lastDisplayContent = '';
         });
 
         socket.on('error', (data) => {
             console.error('错误:', data.message);
+            // 重置状态
+            currentMessageDiv = null;
+            accumulatedContent = '';
+            lastDisplayContent = '';
+            isThinking = false;
             hideTypingIndicator();
             alert('错误: ' + data.message);
         });
 
         socket.on('history_cleared', (data) => {
             console.log(data.message);
+            // 重置所有状态变量
+            currentMessageDiv = null;
+            accumulatedContent = '';
+            lastDisplayContent = '';
+            isThinking = false;
         });
     </script>
 </body>

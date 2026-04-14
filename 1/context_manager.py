@@ -169,7 +169,9 @@ class UserProfile:
 class SessionMemory:
     """会话记忆管理"""
     
-    MEMORY_DIR = "workspace/memory"
+    # 使用脚本所在目录作为基准，确保路径正确
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    MEMORY_DIR = os.path.join(_script_dir, "workspace", "memory")
     
     def __init__(self):
         self.today_memory = []

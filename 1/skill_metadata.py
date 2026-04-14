@@ -212,9 +212,13 @@ class SkillMetadataManager:
         if not meta:
             return None
         
-        # 检查依赖
-        from agent_app import load_skills
-        available_skills = list(load_skills().keys())
+        # 检查依赖 - 延迟导入避免循环依赖
+        try:
+            from jwclaw import load_skills
+            available_skills = list(load_skills().keys())
+        except ImportError:
+            available_skills = []
+        
         missing_deps = meta.check_dependencies(available_skills)
         missing_modules = meta.check_modules()
         
