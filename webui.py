@@ -213,13 +213,28 @@ def add_model():
             return jsonify({"success": False, "error": "缺少必填字段"})
         
         models_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models.json')
+        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
         
         # 加载或创建模型列表
         if os.path.exists(models_path):
             with open(models_path, 'r', encoding='utf-8') as f:
                 models_data = json.load(f)
         else:
-            models_data = {"models": [], "current": name}
+            # 如果models.json不存在，从config.json创建初始模型列表
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            models_data = {
+                "models": [
+                    {
+                        "name": config.get('model', 'unknown'),
+                        "api_base": config.get('api_base', ''),
+                        "api_key": config.get('api_key', ''),
+                        "description": "默认模型"
+                    }
+                ],
+                "current": config.get('model', 'unknown')
+            }
         
         # 检查是否已存在
         existing = next((m for m in models_data['models'] if m['name'] == name), None)
