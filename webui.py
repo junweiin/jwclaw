@@ -124,6 +124,16 @@ def get_status():
         "model": config_cache.get('model', 'unknown') if config_cache else 'unknown'
     })
 
+@app.route('/api/history')
+def get_history():
+    """获取对话历史"""
+    # 过滤掉system消息，只返回用户和助手的对话
+    history = [
+        msg for msg in conversation_history 
+        if msg['role'] in ['user', 'assistant']
+    ]
+    return jsonify(history)
+
 @app.route('/api/skills')
 def get_skills():
     """获取Skills列表"""

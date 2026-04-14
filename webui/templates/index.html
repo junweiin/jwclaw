@@ -375,6 +375,7 @@
         socket.on('connect', () => {
             console.log('✅ 已连接到服务器');
             loadStatus();
+            loadHistory(); // 加载历史消息
         });
 
         socket.on('disconnect', () => {
@@ -389,10 +390,36 @@
                 const response = await fetch('/api/status');
                 const data = await response.json();
                 document.getElementById('model-name').textContent = data.model;
-                document.getElementById('skills-count').textContent = data.skills_count;
-                document.getElementById('memories-count').textContent = data.memories_count;
             } catch (error) {
                 console.error('加载状态失败:', error);
+            }
+        }
+
+        // 加载历史消息
+        async function loadHistory() {
+            try {
+                const response = await fetch('/api/history');
+                const history = await response.json();
+                
+                if (history.length > 0) {
+                    // 清空空状态
+                    const messagesDiv = document.getElementById('chat-messages');
+                    messagesDiv.innerHTML = '';
+                    
+                    // 渲染历史消息
+                    history.forEach(msg => {
+                        if (msg.role === 'user') {
+                            addUserMessage(msg.content, false); // 不滚动
+                        } else if (msg.role === 'assistant') {
+                            addAssistantMessage(msg.content, false); // 不滚动
+                        }
+                    });
+                    
+                    // 最后滚动到底部
+                    scrollToBottom();
+                }
+            } catch (error) {
+                console.error('加载历史失败:', error);
             }
         }
 
@@ -424,8 +451,14 @@
         }
 
         // 添加用户消息
-        function addUserMessage(message) {
+        function addUserMessage(message, scroll = true) {
             const messagesDiv = document.getElementById('chat-messages');
+            
+            // 如果是第一条消息，清空空状态
+            if (messagesDiv.querySelector('.empty-state')) {
+                messagesDiv.innerHTML = '';
+            }
+            
             const messageDiv = document.createElement('div');
             messageDiv.className = 'message user-message';
             messageDiv.innerHTML = `
@@ -434,12 +467,18 @@
                 </div>
             `;
             messagesDiv.appendChild(messageDiv);
-            scrollToBottom();
+            if (scroll) scrollToBottom();
         }
 
         // 添加助手消息
-        function addAssistantMessage(content) {
+        function addAssistantMessage(content, scroll = true) {
             const messagesDiv = document.getElementById('chat-messages');
+            
+            // 如果是第一条消息，清空空状态
+            if (messagesDiv.querySelector('.empty-state')) {
+                messagesDiv.innerHTML = '';
+            }
+            
             const messageDiv = document.createElement('div');
             messageDiv.className = 'message assistant-message';
             messageDiv.innerHTML = `
@@ -448,7 +487,7 @@
                 </div>
             `;
             messagesDiv.appendChild(messageDiv);
-            scrollToBottom();
+            if (scroll) scrollToBottom();
             return messageDiv;
         }
 
