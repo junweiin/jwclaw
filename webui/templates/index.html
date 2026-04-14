@@ -144,6 +144,8 @@
             padding: 8px 0;
             border-left: 2px solid #e0e0e0;
             padding-left: 12px;
+            line-height: 1.6;
+            animation: fadeIn 0.3s ease-in;
         }
         
         /* 工具调用 - 简洁 */
@@ -155,6 +157,18 @@
             margin: 12px 0;
             font-size: 13px;
             font-family: 'Monaco', 'Consolas', monospace;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from { 
+                opacity: 0; 
+                transform: translateX(-10px); 
+            }
+            to { 
+                opacity: 1; 
+                transform: translateX(0); 
+            }
         }
         
         .tool-result {
@@ -169,6 +183,7 @@
             max-height: 300px;
             overflow-y: auto;
             border-left: 3px solid #ddd;
+            animation: slideIn 0.3s ease-out;
         }
         
         /* 输入区域 - 极简 */
@@ -588,8 +603,24 @@
         });
 
         socket.on('thinking_content', (data) => {
-            // 可以在这里显示思考过程
-            console.log('思考:', data.content);
+            // 显示思考过程
+            if (!currentMessageDiv) {
+                currentMessageDiv = addAssistantMessage('');
+            }
+            
+            // 查找或创建思考内容容器
+            let thinkingDiv = currentMessageDiv.querySelector('.thinking-content');
+            if (!thinkingDiv) {
+                thinkingDiv = document.createElement('div');
+                thinkingDiv.className = 'thinking-content';
+                currentMessageDiv.querySelector('.message-content').insertBefore(
+                    thinkingDiv, 
+                    currentMessageDiv.querySelector('.message-content').firstChild
+                );
+            }
+            
+            thinkingDiv.textContent += data.content;
+            scrollToBottom();
         });
 
         socket.on('reply_content', (data) => {
@@ -597,9 +628,24 @@
             if (!currentMessageDiv) {
                 currentMessageDiv = addAssistantMessage('');
             }
+            
             const contentDiv = currentMessageDiv.querySelector('.markdown-content');
-            contentDiv.innerHTML += data.content;
-            scrollToBottom();
+            
+            // 移除思考内容（如果存在）
+            const thinkingDiv = contentDiv.querySelector('.thinking-content');
+            if (thinkingDiv && data.type === 'separator') {
+                thinkingDiv.remove();
+            }
+            
+            // 添加新内容
+            if (data.type !== 'separator') {
+                contentDiv.innerHTML += data.content;
+            }
+            
+            // 使用requestAnimationFrame优化滚动性能
+            requestAnimationFrame(() => {
+                scrollToBottom();
+            });
         });
 
         socket.on('message_complete', (data) => {
